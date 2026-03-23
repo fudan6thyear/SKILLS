@@ -1,0 +1,158 @@
+{
+  "business_name": "",
+  "activity_name": "",
+  "title_override": "",
+  "activity_color": "#4a6fa5",
+  "layout": {
+    "keep_empty_stages": true,
+    "use_store_use_subcolumns": true,
+    "store_use_subcolumns": [
+      "用户界面",
+      "业务系统"
+    ]
+  },
+  "lanes": {
+    "data_subject": {
+      "entities": [
+        {
+          "id": "subject_1",
+          "name": "",
+          "type": "human_actor",
+          "stage": "信息收集",
+          "note": ""
+        }
+      ]
+    },
+    "internal_staff": {
+      "entities": [
+        {
+          "id": "staff_1",
+          "name": "",
+          "type": "human_actor",
+          "stage": "存储/使用",
+          "note": ""
+        }
+      ]
+    },
+    "internal_system": {
+      "entities": [
+        {
+          "id": "ui_1",
+          "name": "",
+          "type": "ui_function",
+          "stage": "存储/使用",
+          "subcolumn": "用户界面",
+          "note": ""
+        },
+        {
+          "id": "system_1",
+          "name": "",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": ""
+        },
+        {
+          "id": "datastore_1",
+          "name": "",
+          "type": "datastore",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": ""
+        }
+      ]
+    },
+    "third_party": {
+      "entities": [
+        {
+          "id": "thirdparty_1",
+          "name": "",
+          "type": "third_party_cloud",
+          "stage": "分享/传输",
+          "note": ""
+        }
+      ]
+    }
+  },
+  "data_items": [
+    {
+      "id": 1,
+      "name": "",
+      "description": "",
+      "data_type_example": "",
+      "sensitive": false,
+      "owner": "",
+      "primary_targets": []
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow_1",
+      "stage": "信息收集",
+      "source_entity_id": "subject_1",
+      "target_entity_id": "ui_1",
+      "data_item_ids": [
+        1
+      ],
+      "description": ""
+    },
+    {
+      "id": "flow_2",
+      "stage": "存储/使用",
+      "source_entity_id": "ui_1",
+      "target_entity_id": "system_1",
+      "data_item_ids": [
+        1
+      ],
+      "description": ""
+    },
+    {
+      "id": "flow_3",
+      "stage": "存储/使用",
+      "source_entity_id": "system_1",
+      "target_entity_id": "datastore_1",
+      "data_item_ids": [
+        1
+      ],
+      "description": ""
+    }
+  ],
+  "legend": {
+    "notes": [
+      "所有流向线使用统一颜色，代表同一数据处理活动",
+      "数据项差异通过流向线上的彩色圆点（编号）区分"
+    ]
+  },
+  "lifecycle_flags": {
+    "has_share_transfer": false,
+    "has_archive_delete": false
+  },
+  "archive_delete": {
+    "retention_entities": [],
+    "delete_entities": [],
+    "flows": []
+  },
+  "generation_constraints": {
+    "title_format": "{business_name}——{activity_name}",
+    "required_stages": [
+      "信息收集",
+      "存储/使用",
+      "分享/传输",
+      "归档/删除"
+    ],
+    "required_lanes": [
+      "数据主体",
+      "内部人员",
+      "内部系统",
+      "第三方"
+    ],
+    "required_legend_sections": [
+      "图形类型说明",
+      "数据项编号清单",
+      "数据处理活动流向说明"
+    ],
+    "enforce_unique_data_item_ids": true,
+    "enforce_single_entity_instance_preferred": true
+  },
+  "prompt_hint": "请根据本 JSON 生成公司标准 Data Flow 图，输出为 draw.io 原生 .drawio 文件。必须保留四个一级阶段和四个固定泳道。图右侧必须包含图形图例、数据项编号清单和数据处理活动流向说明。所有主数据流使用统一 activity_color，同一编号的数据项可在多条路径中重复出现，但编号释义必须唯一。"
+}
