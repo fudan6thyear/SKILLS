@@ -11,6 +11,9 @@
       "业务系统"
     ]
   },
+  "polish": {
+    "mode": "layout_locked"
+  },
   "lanes": {
     "data_subject": {
       "entities": [
@@ -42,6 +45,7 @@
           "type": "ui_function",
           "stage": "存储/使用",
           "subcolumn": "用户界面",
+          "semantic_role": "",
           "note": ""
         },
         {
@@ -50,6 +54,7 @@
           "type": "internal_system",
           "stage": "存储/使用",
           "subcolumn": "业务系统",
+          "semantic_role": "",
           "note": ""
         },
         {
@@ -58,6 +63,7 @@
           "type": "datastore",
           "stage": "存储/使用",
           "subcolumn": "业务系统",
+          "semantic_role": "",
           "note": ""
         }
       ]
@@ -94,6 +100,8 @@
       "data_item_ids": [
         1
       ],
+      "flow_role": "",
+      "routing_intent": {},
       "description": ""
     },
     {
@@ -104,6 +112,8 @@
       "data_item_ids": [
         1
       ],
+      "flow_role": "",
+      "routing_intent": {},
       "description": ""
     },
     {
@@ -114,6 +124,8 @@
       "data_item_ids": [
         1
       ],
+      "flow_role": "",
+      "routing_intent": {},
       "description": ""
     }
   ],

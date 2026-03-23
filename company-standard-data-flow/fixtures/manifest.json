@@ -1,0 +1,32 @@
+[
+  {
+    "id": "risk_manual_golden",
+    "mode": "validate_existing",
+    "json": "risk/安全保障-异常登录识别与风险控制.json",
+    "drawio": "risk/安全保障-异常登录识别与风险控制.drawio",
+    "expected_overall": "PASS"
+  },
+  {
+    "id": "customer_manual_golden",
+    "mode": "validate_existing",
+    "json": "customer/customer-service-data-flow.json",
+    "drawio": "customer/customer-service-data-flow.drawio",
+    "expected_overall": "PASS"
+  },
+  {
+    "id": "ad_semantic_generate_pass",
+    "mode": "generate_and_validate",
+    "json": "ad/广告商业化-程序化广告投放与效果归因-语义版.json",
+    "expected_overall": "PASS"
+  },
+  {
+    "id": "member_generated_known_gap",
+    "mode": "generate_and_validate",
+    "json": "member/会员服务-订单支付与会员开通.json",
+    "expected_overall": "FAIL",
+    "expected_checks": {
+      "HC-6": "FAIL",
+      "HC-7": "FAIL"
+    }
+  }
+]

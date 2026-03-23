@@ -1,0 +1,378 @@
+{
+  "business_name": "广告商业化",
+  "activity_name": "程序化广告投放与效果归因",
+  "title_override": "",
+  "activity_color": "#b4642f",
+  "layout": {
+    "keep_empty_stages": true,
+    "use_store_use_subcolumns": true,
+    "store_use_subcolumns": [
+      "用户界面",
+      "业务系统"
+    ]
+  },
+  "lanes": {
+    "data_subject": {
+      "entities": [
+        {
+          "id": "subject_user",
+          "name": "用户",
+          "type": "human_actor",
+          "stage": "信息收集",
+          "note": "在 App 中浏览广告并触发展示、点击与转化行为"
+        }
+      ]
+    },
+    "internal_staff": {
+      "entities": []
+    },
+    "internal_system": {
+      "entities": [
+        {
+          "id": "app_client",
+          "name": "App 客户端",
+          "type": "ui_function",
+          "stage": "信息收集",
+          "note": "采集设备标识、粗略位置信息，并承载广告展示与点击上报",
+          "layout_hint": {
+            "x": 135,
+            "y": 401
+          }
+        },
+        {
+          "id": "tag_platform",
+          "name": "标签平台",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "维护兴趣标签、年龄段标签、会员状态和地域信息",
+          "layout_hint": {
+            "x": 305,
+            "y": 525
+          }
+        },
+        {
+          "id": "ad_platform",
+          "name": "广告平台",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "执行广告请求匹配、投放决策、曝光点击记录和第三方对接",
+          "layout_hint": {
+            "x": 625,
+            "y": 525
+          }
+        },
+        {
+          "id": "attribution_system",
+          "name": "归因分析系统",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "接收曝光ID、点击ID和转化事件，用于投放效果归因分析",
+          "layout_hint": {
+            "x": 895,
+            "y": 401
+          },
+          "semantic_role": "analysis_sink"
+        }
+      ]
+    },
+    "third_party": {
+      "entities": [
+        {
+          "id": "juliang_dsp",
+          "name": "聚量DSP",
+          "type": "third_party_cloud",
+          "stage": "分享/传输",
+          "note": "接收设备标识、兴趣标签和地域信息，返回广告素材及追踪字段"
+        }
+      ]
+    }
+  },
+  "data_items": [
+    {
+      "id": 1,
+      "name": "设备标识",
+      "description": "用于广告请求识别的 OAID 或其他替代标识",
+      "data_type_example": "OAID/AAID/IDFV/设备指纹替代标识",
+      "sensitive": true,
+      "owner": "用户",
+      "primary_targets": [
+        "app_client",
+        "ad_platform",
+        "juliang_dsp"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "广告点击记录",
+      "description": "用户点击广告时形成的点击日志和行为记录",
+      "data_type_example": "点击时间、广告位、点击动作",
+      "sensitive": true,
+      "owner": "平台",
+      "primary_targets": [
+        "ad_platform",
+        "attribution_system"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "粗略位置信息",
+      "description": "用于广告投放的城市级或区县级地理范围信息",
+      "data_type_example": "城市/行政区划编码",
+      "sensitive": true,
+      "owner": "用户",
+      "primary_targets": [
+        "app_client",
+        "ad_platform"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "年龄段标签",
+      "description": "用户画像中的年龄范围标签",
+      "data_type_example": "18-24/25-34/35-44",
+      "sensitive": true,
+      "owner": "平台",
+      "primary_targets": [
+        "tag_platform",
+        "ad_platform"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "会员状态",
+      "description": "用户是否为会员及会员等级状态",
+      "data_type_example": "普通会员/VIP/非会员",
+      "sensitive": true,
+      "owner": "平台",
+      "primary_targets": [
+        "tag_platform",
+        "ad_platform"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "兴趣标签",
+      "description": "用于广告定向的兴趣偏好标签",
+      "data_type_example": "数码爱好者/母婴兴趣/游戏兴趣",
+      "sensitive": true,
+      "owner": "平台",
+      "primary_targets": [
+        "tag_platform",
+        "ad_platform",
+        "juliang_dsp"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "地域信息",
+      "description": "用于广告定向的区域信息",
+      "data_type_example": "省市编码/区域标签",
+      "sensitive": true,
+      "owner": "平台",
+      "primary_targets": [
+        "tag_platform",
+        "ad_platform",
+        "juliang_dsp"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "广告素材ID",
+      "description": "第三方返回的广告素材唯一标识",
+      "data_type_example": "creative_784512",
+      "sensitive": false,
+      "owner": "聚量DSP",
+      "primary_targets": [
+        "ad_platform",
+        "app_client"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "曝光ID",
+      "description": "用于曝光归因和效果分析的曝光标识",
+      "data_type_example": "imp_20260323_0001",
+      "sensitive": false,
+      "owner": "平台",
+      "primary_targets": [
+        "ad_platform",
+        "attribution_system"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "点击ID",
+      "description": "用于点击归因的点击追踪标识",
+      "data_type_example": "clk_20260323_0001",
+      "sensitive": false,
+      "owner": "聚量DSP",
+      "primary_targets": [
+        "ad_platform",
+        "app_client",
+        "attribution_system"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "转化事件",
+      "description": "用于广告效果分析的转化事件记录",
+      "data_type_example": "注册/下单/付费",
+      "sensitive": true,
+      "owner": "平台",
+      "primary_targets": [
+        "ad_platform",
+        "attribution_system"
+      ]
+    },
+    {
+      "id": 12,
+      "name": "曝光回执",
+      "description": "DSP 返回的广告展示确认信息",
+      "data_type_example": "展示确认流水/回执状态",
+      "sensitive": false,
+      "owner": "聚量DSP",
+      "primary_targets": [
+        "ad_platform"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow_user_to_app",
+      "stage": "信息收集",
+      "source_entity_id": "subject_user",
+      "target_entity_id": "app_client",
+      "data_item_ids": [
+        1,
+        3
+      ],
+      "description": "用户使用 App 时产生设备标识和粗略位置信息"
+    },
+    {
+      "id": "flow_app_to_ad",
+      "stage": "信息收集",
+      "source_entity_id": "app_client",
+      "target_entity_id": "ad_platform",
+      "data_item_ids": [
+        1,
+        2,
+        3
+      ],
+      "description": "App 客户端向广告平台上报广告请求、点击记录和粗略位置信息"
+    },
+    {
+      "id": "flow_tag_to_ad",
+      "stage": "存储/使用",
+      "source_entity_id": "tag_platform",
+      "target_entity_id": "ad_platform",
+      "data_item_ids": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "description": "标签平台向广告平台提供年龄段标签、会员状态、兴趣标签和地域信息"
+    },
+    {
+      "id": "flow_ad_to_dsp",
+      "stage": "分享/传输",
+      "source_entity_id": "ad_platform",
+      "target_entity_id": "juliang_dsp",
+      "data_item_ids": [
+        1,
+        6,
+        7
+      ],
+      "description": "广告平台向聚量DSP传输设备标识、兴趣标签和地域信息"
+    },
+    {
+      "id": "flow_dsp_to_ad",
+      "stage": "分享/传输",
+      "source_entity_id": "juliang_dsp",
+      "target_entity_id": "ad_platform",
+      "data_item_ids": [
+        8,
+        10,
+        12
+      ],
+      "description": "聚量DSP返回广告素材ID、点击ID和曝光回执"
+    },
+    {
+      "id": "flow_ad_to_app",
+      "stage": "信息收集",
+      "source_entity_id": "ad_platform",
+      "target_entity_id": "app_client",
+      "data_item_ids": [
+        8,
+        10
+      ],
+      "description": "广告平台向 App 客户端下发广告素材ID和点击追踪ID用于展示与点击归集",
+      "flow_role": "return_to_ui",
+      "routing_intent": {
+        "prefer_return_to_ui": true
+      }
+    },
+    {
+      "id": "flow_ad_to_attribution",
+      "stage": "存储/使用",
+      "source_entity_id": "ad_platform",
+      "target_entity_id": "attribution_system",
+      "data_item_ids": [
+        9,
+        10,
+        11
+      ],
+      "description": "广告平台向归因分析系统同步曝光ID、点击ID和转化事件",
+      "flow_role": "reporting",
+      "routing_intent": {
+        "prefer_runway": true
+      }
+    }
+  ],
+  "legend": {
+    "notes": [
+      "所有流向线使用统一颜色，代表程序化广告投放与效果归因这一单一数据处理活动",
+      "数据项差异通过流向线上的编号圆点区分",
+      "年龄段标签未在系统间字段清单中单独列出，此处按活动描述保守建模为标签平台向广告平台输出的画像标签之一",
+      "曝光ID和点击ID按广告平台汇总客户端事件及DSP回执后同步至归因分析系统进行效果分析"
+    ]
+  },
+  "lifecycle_flags": {
+    "has_share_transfer": true,
+    "has_archive_delete": false
+  },
+  "archive_delete": {
+    "retention_entities": [],
+    "delete_entities": [],
+    "flows": []
+  },
+  "generation_constraints": {
+    "title_format": "{business_name}——{activity_name}",
+    "required_stages": [
+      "信息收集",
+      "存储/使用",
+      "分享/传输",
+      "归档/删除"
+    ],
+    "required_lanes": [
+      "数据主体",
+      "内部人员",
+      "内部系统",
+      "第三方"
+    ],
+    "required_legend_sections": [
+      "图形类型说明",
+      "数据项编号清单",
+      "数据处理活动流向说明"
+    ],
+    "enforce_unique_data_item_ids": true,
+    "enforce_single_entity_instance_preferred": true
+  },
+  "prompt_hint": "请根据本 JSON 生成公司标准 Data Flow 图，输出为 draw.io 原生 .drawio 文件。必须保留四个一级阶段和四个固定泳道。图右侧必须包含图形类型说明、数据项编号清单和数据处理活动流向说明。所有主数据流使用统一 activity_color，同一编号的数据项可在多条路径中重复出现，但编号释义必须唯一。",
+  "polish": {
+    "mode": "layout_locked"
+  }
+}

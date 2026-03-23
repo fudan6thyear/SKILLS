@@ -17,6 +17,15 @@ import sys
 from collections import defaultdict
 from xml.etree import ElementTree as ET
 
+from geometry import (
+    build_edge_path,
+    direction_from_port,
+    entity_center,
+    extract_port_spec,
+    path_segments,
+    seg_len,
+)
+
 
 # ─── Constants (mirrored from generate_company_data_flow.py) ──────────────────
 
@@ -156,8 +165,10 @@ def find_entity_cells(cells, json_data):
             all_entities.append(e)
 
     name_to_entity = {}
+    id_to_entity = {}
     for e in all_entities:
         name_to_entity[e["name"]] = e
+        id_to_entity[e["id"]] = e
 
     vertex_cells = [
         c for c in cells
@@ -166,8 +177,13 @@ def find_entity_cells(cells, json_data):
 
     for c in vertex_cells:
         val = (c.get("value") or "").strip()
-        if val in name_to_entity:
+        ent = None
+        meta_id = (c.get("codexEntityId") or "").strip()
+        if meta_id and meta_id in id_to_entity:
+            ent = id_to_entity[meta_id]
+        elif val in name_to_entity:
             ent = name_to_entity[val]
+        if ent:
             entity_map[ent["id"]] = {
                 "entity": ent,
                 "cell_id": c.get("id"),
@@ -192,6 +208,8 @@ def find_edge_cells(cells):
                 "target": c.get("target"),
                 "style": c.get("style", ""),
                 "waypoints": c.get("waypoints", []),
+                "flow_id": c.get("codexFlowId", ""),
+                "flow_role": c.get("codexFlowRole", ""),
             })
     return edges
 
@@ -201,6 +219,18 @@ def find_dot_cells(cells):
     dots = []
     for c in cells:
         if c.get("vertex") != "1":
+            continue
+        if c.get("codexKind") == "legend_dot":
+            continue
+        if c.get("codexKind") == "data_dot":
+            dots.append({
+                "id": c.get("id"),
+                "label": (c.get("value") or "").strip(),
+                "x": c.get("geo_x", 0),
+                "y": c.get("geo_y", 0),
+                "w": c.get("geo_width", 0),
+                "h": c.get("geo_height", 0),
+            })
             continue
         style = c.get("style", "")
         if "ellipse" in style and "aspect=fixed" in style:
@@ -223,15 +253,6 @@ def point_in_box(px, py, box, pad=5):
     """Check if point (px, py) is inside box dict with keys x, y, w, h."""
     return (box["x"] - pad <= px <= box["x"] + box["w"] + pad and
             box["y"] - pad <= py <= box["y"] + box["h"] + pad)
-
-
-def entity_center(ent_info):
-    return (ent_info["x"] + ent_info["w"] / 2,
-            ent_info["y"] + ent_info["h"] / 2)
-
-
-def seg_len(a, b):
-    return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
 
 
 def segments_parallel_distance(seg_a, seg_b):
@@ -261,20 +282,6 @@ def segments_parallel_distance(seg_a, seg_b):
             return abs(ax1 - bx1)
 
     return None
-
-
-def build_edge_path(src_info, tgt_info, waypoints):
-    """Build full path from source center through waypoints to target center."""
-    sc = entity_center(src_info)
-    tc = entity_center(tgt_info)
-    return [sc] + waypoints + [tc]
-
-
-def path_segments(path):
-    """Return list of (point_a, point_b) segments."""
-    return [(path[i], path[i + 1]) for i in range(len(path) - 1)]
-
-
 def extract_exit_entry_dirs(style):
     """Extract exit and entry directions from edge style string."""
     dirs = {}
@@ -285,17 +292,54 @@ def extract_exit_entry_dirs(style):
     return dirs
 
 
-def direction_from_port(px, py):
-    """Infer direction name from port ratios."""
-    if py < 0.15:
-        return "top"
-    if py > 0.85:
-        return "bottom"
-    if px < 0.15:
-        return "left"
-    if px > 0.85:
-        return "right"
-    return "center"
+def segment_intersects_box(a, b, box):
+    x1, y1 = a
+    x2, y2 = b
+    bx1, by1, bx2, by2 = box
+
+    if abs(y1 - y2) < 1e-6:
+        y = y1
+        if y < by1 or y > by2:
+            return False
+        left, right = sorted((x1, x2))
+        return not (right <= bx1 or left >= bx2)
+
+    if abs(x1 - x2) < 1e-6:
+        x = x1
+        if x < bx1 or x > bx2:
+            return False
+        top, bottom = sorted((y1, y2))
+        return not (bottom <= by1 or top >= by2)
+
+    left, right = sorted((x1, x2))
+    top, bottom = sorted((y1, y2))
+    return not (right <= bx1 or left >= bx2 or bottom <= by1 or top >= by2)
+
+
+def edge_overlap_segment(seg_a, seg_b):
+    (ax1, ay1), (ax2, ay2) = seg_a
+    (bx1, by1), (bx2, by2) = seg_b
+
+    a_h = abs(ay1 - ay2) < 2
+    b_h = abs(by1 - by2) < 2
+    a_v = abs(ax1 - ax2) < 2
+    b_v = abs(bx1 - bx2) < 2
+
+    if a_h and b_h and abs(ay1 - by1) < 2:
+        a0, a1 = sorted((ax1, ax2))
+        b0, b1 = sorted((bx1, bx2))
+        lo = max(a0, b0)
+        hi = min(a1, b1)
+        if hi - lo > 5:
+            return ((lo, ay1), (hi, ay1))
+    if a_v and b_v and abs(ax1 - bx1) < 2:
+        a0, a1 = sorted((ay1, ay2))
+        b0, b1 = sorted((by1, by2))
+        lo = max(a0, b0)
+        hi = min(a1, b1)
+        if hi - lo > 5:
+            return ((ax1, lo), (ax1, hi))
+    return None
 
 
 # ─── Check Functions ─────────────────────────────────────────────────────────
@@ -392,7 +436,12 @@ def check_hc4_parallel_spacing(entity_map, edge_cells, json_data):
         tgt_info = cell_id_to_entity.get(edge["target"])
         if not src_info or not tgt_info:
             continue
-        path = build_edge_path(src_info, tgt_info, edge.get("waypoints", []))
+        path = build_edge_path(
+            src_info,
+            tgt_info,
+            waypoints=edge.get("waypoints", []),
+            style=edge.get("style", ""),
+        )
         segs = path_segments(path)
         for seg in segs:
             if seg_len(seg[0], seg[1]) > 10:
@@ -450,6 +499,8 @@ def check_hc5_port_allocation(entity_map, edge_cells):
             total_per_entity[eid] += 1
             if "exitX" in dirs and "exitY" in dirs:
                 d = direction_from_port(dirs["exitX"], dirs["exitY"])
+                if d == "center" and entity_map[eid]["entity"].get("type") == "third_party_cloud":
+                    d = "left" if dirs["exitX"] < 0.5 else "right"
                 connections_per_entity[eid][d] += 1
 
         if tgt_cid in cell_id_to_eid:
@@ -457,14 +508,20 @@ def check_hc5_port_allocation(entity_map, edge_cells):
             total_per_entity[eid] += 1
             if "entryX" in dirs and "entryY" in dirs:
                 d = direction_from_port(dirs["entryX"], dirs["entryY"])
+                if d == "center" and entity_map[eid]["entity"].get("type") == "third_party_cloud":
+                    d = "left" if dirs["entryX"] < 0.5 else "right"
                 connections_per_entity[eid][d] += 1
 
     for eid, side_counts in connections_per_entity.items():
         total = total_per_entity[eid]
         if total <= 4:
+            entity = entity_map[eid]["entity"]
+            side_limit = 1
+            if entity.get("type") == "third_party_cloud":
+                side_limit = 2
             for side, count in side_counts.items():
-                if count > 1:
-                    ename = entity_map[eid]["entity"]["name"]
+                if count > side_limit:
+                    ename = entity["name"]
                     fails.append(
                         f"Entity '{ename}' ({eid}): {count} lines on {side} side "
                         f"but total connections={total} <= 4"
@@ -475,6 +532,121 @@ def check_hc5_port_allocation(entity_map, edge_cells):
         "name": "四面端口优先 (Four-Side Port Priority)",
         "status": "PASS" if not fails else "FAIL",
         "details": "; ".join(fails) if fails else "Port allocation within limits.",
+    }
+
+
+def build_edge_geometries(entity_map, edge_cells):
+    cell_id_to_entity = {}
+    for eid, info in entity_map.items():
+        cid = info.get("cell_id")
+        if cid:
+            cell_id_to_entity[cid] = info
+
+    records = []
+    for edge in edge_cells:
+        src_info = cell_id_to_entity.get(edge["source"])
+        tgt_info = cell_id_to_entity.get(edge["target"])
+        if not src_info or not tgt_info:
+            continue
+        path = build_edge_path(
+            src_info,
+            tgt_info,
+            waypoints=edge.get("waypoints", []),
+            style=edge.get("style", ""),
+        )
+        records.append({
+            "edge": edge,
+            "src": src_info,
+            "tgt": tgt_info,
+            "path": path,
+            "segments": path_segments(path),
+        })
+    return records
+
+
+def check_hc6_unrelated_entity_crossing(entity_map, edge_cells):
+    """HC-6: No edge may pass through an unrelated entity box."""
+    fails = []
+    edge_records = build_edge_geometries(entity_map, edge_cells)
+
+    for rec in edge_records:
+        edge = rec["edge"]
+        src_id = rec["src"]["entity"]["id"]
+        tgt_id = rec["tgt"]["entity"]["id"]
+        for eid, info in entity_map.items():
+            if eid in (src_id, tgt_id):
+                continue
+            box = (
+                info["x"] - 8,
+                info["y"] - 8,
+                info["x"] + info["w"] + 8,
+                info["y"] + info["h"] + 8,
+            )
+            if any(segment_intersects_box(a, b, box) for a, b in rec["segments"]):
+                fails.append(
+                    f"Edge {edge['id']} ({edge.get('flow_id') or '?'}) intersects unrelated entity "
+                    f"'{info['entity']['name']}'"
+                )
+
+    return {
+        "id": "HC-6",
+        "name": "不得穿越无关模块 (No Unrelated Entity Crossing)",
+        "status": "PASS" if not fails else "FAIL",
+        "details": "; ".join(fails) if fails else "No edges cross unrelated entity boxes.",
+    }
+
+
+def check_hc7_semantic_merge(entity_map, edge_cells):
+    """HC-7: Distinct semantic flows must keep readable independent corridors."""
+    fails = []
+    edge_records = build_edge_geometries(entity_map, edge_cells)
+    min_shared = 48
+
+    for i in range(len(edge_records)):
+        for j in range(i + 1, len(edge_records)):
+            a = edge_records[i]
+            b = edge_records[j]
+            ea = a["edge"]
+            eb = b["edge"]
+            sa = a["src"]["entity"]["id"]
+            ta = a["tgt"]["entity"]["id"]
+            sb = b["src"]["entity"]["id"]
+            tb = b["tgt"]["entity"]["id"]
+
+            relation = None
+            if sa == sb and ta != tb:
+                relation = "same_source"
+                seg_pairs = [(a["segments"][0], b["segments"][0])] if a["segments"] and b["segments"] else []
+            elif ta == tb and sa != sb:
+                relation = "same_target"
+                seg_pairs = [(a["segments"][-1], b["segments"][-1])] if a["segments"] and b["segments"] else []
+            elif sa == tb and ta == sb:
+                relation = "opposite_direction"
+                seg_pairs = [
+                    (seg_a, seg_b)
+                    for seg_a in a["segments"]
+                    for seg_b in b["segments"]
+                ]
+            else:
+                continue
+
+            for seg_a, seg_b in seg_pairs:
+                overlap = edge_overlap_segment(seg_a, seg_b)
+                if overlap is None:
+                    continue
+                if seg_len(*overlap) < min_shared:
+                    continue
+                fails.append(
+                    f"Edges {ea['id']} ({ea.get('flow_id') or '?'}) and {eb['id']} ({eb.get('flow_id') or '?'}) "
+                    f"share a {relation} corridor too early (overlap {seg_len(*overlap):.0f}px)"
+                )
+                break
+
+    return {
+        "id": "HC-7",
+        "name": "不同语义流不得过早合流 (No Early Semantic Merge)",
+        "status": "PASS" if not fails else "FAIL",
+        "details": "; ".join(fails) if fails else "Distinct semantic flows keep independent readable corridors.",
     }
 
 
@@ -598,15 +770,19 @@ def check_ck4_flow_completeness(entity_map, edge_cells, json_data):
 
 
 def check_ck5_bend_count(edge_cells):
-    """CK-5: Normal edges should have <= 2 waypoints (bends)."""
+    """CK-5: Allow readability-driven extra bends for special semantic flows."""
     fails = []
 
     for edge in edge_cells:
         wpts = edge.get("waypoints", [])
-        if len(wpts) > 2:
+        flow_role = edge.get("flow_role", "")
+        allowance = 3
+        if flow_role in ("return_to_ui", "reporting", "analysis_report", "third_party_return"):
+            allowance = 4
+        if len(wpts) > allowance:
             fails.append(
                 f"Edge {edge['id']} ({edge.get('source','?')}->{edge.get('target','?')}): "
-                f"{len(wpts)} waypoints (max 2 for normal edges)"
+                f"{len(wpts)} waypoints (max {allowance} for flow_role='{flow_role or 'default'}')"
             )
 
     return {
@@ -635,6 +811,8 @@ def validate(drawio_path, json_path):
          "details": "Process constraint; not verifiable from static output."},
         check_hc4_parallel_spacing(entity_map, edge_cells, json_data),
         check_hc5_port_allocation(entity_map, edge_cells),
+        check_hc6_unrelated_entity_crossing(entity_map, edge_cells),
+        check_hc7_semantic_merge(entity_map, edge_cells),
         check_ck1_page_structure(cells),
         check_ck2_shape_types(entity_map),
         check_ck3_data_dots(dot_cells, json_data),

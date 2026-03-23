@@ -62,7 +62,7 @@ Each entity has four connection sides (top, right, bottom, left). Each side gets
 
 ## Core Rules
 
-- Output native draw.io XML only.
+- Output editor-native draw.io `.drawio` XML (`mxfile` wrapper preferred).
 - Four fixed stages: `信息收集` / `存储/使用` / `分享/传输` / `归档/删除`.
 - Four fixed lanes: `数据主体` / `内部人员` / `内部系统` / `第三方`.
 - **Adaptive canvas (v7)**: lane heights and stage widths are computed dynamically from entity counts and sizes — never assume a fixed page size.
@@ -70,12 +70,18 @@ Each entity has four connection sides (top, right, bottom, left). Each side gets
 - Use numbered data dots to differentiate data items.
 - **Routing (v6+)**: prefer L-bends; normally <= 2 bends per edge; extra bends only when dot count demands a wider arch.
 - **Collision avoidance (v8)**: candidate routes are scored for entity collision, path overlap, and dot space sufficiency.
-- **Semantic routing (v8.1/v8.2)**: return-to-UI flows and multi-dot datastore writes use context-aware port selection.
+- **Semantic routing (v9)**: return-to-UI flows and reporting/analysis sinks are handled through candidate-route families plus scoring, not only hard-coded side preferences.
+- **Stable metadata (v9)**: generated entities, edges, and data dots carry stable metadata (`entity_id`, `flow_id`, `data_item_ids`, semantic role hints) to support manual-edit absorption and diffing.
+- **Two-stage polish (v9)**: after initial routing, the generator can run a layout-locked polish pass that preserves entity boxes and only reworks edge ports, waypoints, and dots.
 
 ## Preferred Workflow
 
 1. **Normalize input**: convert the user's business description into template fields.
 2. **Fill JSON**: duplicate `company-standard-data-flow-input-template.json` next to your working files (or in the skill root) and fill `activity_name`, `activity_color`, entities, `data_items`, and `flows`.
+   - Optional entity field: `semantic_role`, for example `analysis_sink` / `reporting_sink`.
+   - Optional flow field: `flow_role`, for example `return_to_ui` / `reporting`.
+   - Optional flow field: `routing_intent`, for example `{"prefer_runway": true}` or `{"prefer_return_to_ui": true}`.
+   - Optional top-level field: `polish.mode`, recommended first value `layout_locked`.
 3. **Generate diagram** (run from skill root, or use absolute paths to the scripts):
 
 ```powershell
@@ -98,6 +104,9 @@ Read the script's stdout (a JSON report) and return it to me verbatim. Do not mo
 5. **Check validation result**:
    - **All checks PASS** → proceed to step 6.
    - **Any check FAIL** → proceed to step 7.
+   - New hard checks now include:
+     - `HC-6` 不得穿越无关模块
+     - `HC-7` 不同语义流不得过早合流
 
 6. **Deliver final `.drawio`** to the user.
 
@@ -105,7 +114,7 @@ Read the script's stdout (a JSON report) and return it to me verbatim. Do not mo
    - HC-1 fail → move entity to correct lane/stage in JSON, or fix `layout_hint`
    - HC-2 fail → increase `SLOT_H` or `stage_w`, or add `layout_hint` to spread entities
    - HC-4 fail → adjust waypoints or entity positions to create more separation
-   - HC-5 fail → redistribute connections across different sides (or merge duplicate same-direction flows in JSON; bidirectional pairs may need a manual `.drawio` tweak until the generator handles return ports automatically)
+   - HC-5 fail → redistribute connections across different sides (or merge duplicate same-direction flows in JSON; bidirectional pairs may need a `flow_role` / `routing_intent` hint such as `return_to_ui`)
    - Then return to step 3 and regenerate.
 
 8. **Absorb manual edits**: if the user hand-edits the delivered diagram, compare edited vs generated files, infer visual intent, then update generator, JSON input, and this skill when the intent is reusable.
@@ -116,7 +125,23 @@ Read the script's stdout (a JSON report) and return it to me verbatim. Do not mo
 |------|------|
 | `scripts/generate_company_data_flow.py` | Diagram generator |
 | `scripts/validate_company_data_flow.py` | Automated validation (JSON report on stdout) |
+| `scripts/geometry.py` | Shared path/anchor reconstruction used by generator and validator |
+| `scripts/run_regression_fixtures.py` | Runs the curated regression manifest for golden fixtures / known gaps |
 | `company-standard-data-flow-input-template.json` | Input schema starter |
+
+## Regression Fixtures
+
+The skill now carries a fixture manifest at `fixtures/manifest.json`.
+
+- Positive fixtures can validate hand-tuned `.drawio` files directly.
+- Generator fixtures can regenerate from JSON and assert `PASS`.
+- Known-gap fixtures can assert a controlled `FAIL` on specific checks until the generator catches up.
+
+Run them with:
+
+```bash
+python "scripts/run_regression_fixtures.py"
+```
 
 ## References
 

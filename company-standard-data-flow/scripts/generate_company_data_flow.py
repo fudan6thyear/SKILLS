@@ -6,6 +6,8 @@ from collections import defaultdict
 from copy import deepcopy
 from xml.etree import ElementTree as ET
 
+from geometry import build_edge_path
+
 # ───────────────────────── constants ──────────────────────────────────────────
 STAGES = ["信息收集", "存储/使用", "分享/传输", "归档/删除"]
 STAGE_INDEX = {name: i for i, name in enumerate(STAGES)}
@@ -98,19 +100,63 @@ class IdGen:
 class Builder:
     def __init__(self):
         self.root = ET.Element(
-            "mxGraphModel", adaptiveColors="auto", grid="1", gridSize="10"
+            "mxfile",
+            host="Codex",
+            agent="Codex",
+            version="29.6.1",
         )
-        r = ET.SubElement(self.root, "root")
+        diagram = ET.SubElement(self.root, "diagram", id="codex-page-1", name="第 1 页")
+        model = ET.SubElement(
+            diagram,
+            "mxGraphModel",
+            dx="1200",
+            dy="900",
+            grid="1",
+            gridSize="10",
+            guides="1",
+            tooltips="1",
+            connect="1",
+            arrows="1",
+            fold="1",
+            page="1",
+            pageScale="1",
+            pageWidth="827",
+            pageHeight="1169",
+            math="0",
+            shadow="0",
+            adaptiveColors="auto",
+        )
+        r = ET.SubElement(model, "root")
         ET.SubElement(r, "mxCell", id="0")
         ET.SubElement(r, "mxCell", id="1", parent="0")
         self._r   = r
         self._ids = IdGen()
 
-    def vertex(self, value, style, x, y, w, h, parent="1"):
+    def _meta_attrs(self, metadata):
+        attrs = {}
+        for key, value in (metadata or {}).items():
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple)):
+                attrs[key] = ",".join(str(v) for v in value)
+            elif isinstance(value, bool):
+                attrs[key] = "true" if value else "false"
+            else:
+                attrs[key] = str(value)
+        return attrs
+
+    def vertex(self, value, style, x, y, w, h, parent="1", metadata=None):
+        attrs = {
+            "id": self._ids.next(),
+            "value": esc(value),
+            "style": style,
+            "vertex": "1",
+            "parent": parent,
+        }
+        attrs.update(self._meta_attrs(metadata))
         cell = ET.SubElement(
             self._r, "mxCell",
-            id=self._ids.next(), value=esc(value),
-            style=style, vertex="1", parent=parent,
+            **attrs,
         )
         ET.SubElement(cell, "mxGeometry",
                       x=str(round(x)), y=str(round(y)),
@@ -118,11 +164,20 @@ class Builder:
                       **{"as": "geometry"})
         return cell.attrib["id"]
 
-    def edge(self, src, tgt, style, value="", parent="1", points=None):
+    def edge(self, src, tgt, style, value="", parent="1", points=None, metadata=None):
+        attrs = {
+            "id": self._ids.next(),
+            "value": esc(value),
+            "style": style,
+            "edge": "1",
+            "source": src,
+            "target": tgt,
+            "parent": parent,
+        }
+        attrs.update(self._meta_attrs(metadata))
         cell = ET.SubElement(
             self._r, "mxCell",
-            id=self._ids.next(), value=esc(value),
-            style=style, edge="1", source=src, target=tgt, parent=parent,
+            **attrs,
         )
         geo = ET.SubElement(cell, "mxGeometry", relative="1",
                             **{"as": "geometry"})
@@ -307,6 +362,71 @@ def normalize_entities(data):
             entities.append(ne)
             by_id[ne["id"]] = ne
     return entities, by_id
+
+
+def resolve_polish_mode(data, cli_mode=None):
+    if cli_mode and cli_mode != "auto":
+        return cli_mode
+    polish = data.get("polish") or {}
+    return (polish.get("mode") or "layout_locked").strip() or "layout_locked"
+
+
+def entity_semantic_role(entity):
+    return ((entity or {}).get("semantic_role") or "").strip()
+
+
+def build_flow_context(flow, src, tgt):
+    intent = deepcopy(flow.get("routing_intent") or {})
+    flow_role = ((flow or {}).get("flow_role") or "").strip()
+    src_entity = src.get("entity") or {}
+    tgt_entity = tgt.get("entity") or {}
+    src_stage = src_entity.get("stage", "")
+    tgt_stage = tgt_entity.get("stage", "")
+    target_role = entity_semantic_role(tgt_entity)
+    source_role = entity_semantic_role(src_entity)
+    n_dots = len(flow.get("data_item_ids") or [])
+
+    inferred_return_to_ui = (
+        tgt_entity.get("type") == "ui_function" and
+        src_entity.get("lane_key") == "internal_system" and
+        STAGE_INDEX.get(src_stage, 0) >= STAGE_INDEX.get(tgt_stage, 0)
+    )
+    inferred_reporting_sink = (
+        target_role in ("analysis_sink", "reporting_sink") and
+        n_dots > 1
+    )
+
+    return {
+        "flow_id": flow.get("id", ""),
+        "flow_role": flow_role,
+        "routing_intent": intent,
+        "n_dots": n_dots,
+        "source_role": source_role,
+        "target_role": target_role,
+        "prefer_return_to_ui": (
+            flow_role == "return_to_ui" or
+            intent.get("prefer_return_to_ui") is True or
+            inferred_return_to_ui
+        ),
+        "prefer_reporting_sink": (
+            flow_role in ("reporting", "analysis_report") or
+            intent.get("prefer_runway") is True or
+            inferred_reporting_sink
+        ),
+    }
+
+
+def flow_metadata(flow, src, tgt, flow_ctx):
+    return {
+        "codexKind": "flow_edge",
+        "codexFlowId": flow.get("id", ""),
+        "codexFlowRole": flow_ctx.get("flow_role", ""),
+        "codexSourceEntityId": flow.get("source_entity_id", ""),
+        "codexTargetEntityId": flow.get("target_entity_id", ""),
+        "codexDataItemIds": flow.get("data_item_ids") or [],
+        "codexTargetRole": flow_ctx.get("target_role", ""),
+        "codexRoutingIntent": json.dumps(flow_ctx.get("routing_intent") or {}, ensure_ascii=False, sort_keys=True),
+    }
 
 
 def place_entities(data, entities, L):
@@ -518,6 +638,43 @@ def _path_overlap_count(path, other_paths):
     return overlaps
 
 
+def _segments_parallel_distance(seg_a, seg_b):
+    (ax1, ay1), (ax2, ay2) = seg_a
+    (bx1, by1), (bx2, by2) = seg_b
+
+    a_h = abs(ay1 - ay2) < 1e-6
+    b_h = abs(by1 - by2) < 1e-6
+    a_v = abs(ax1 - ax2) < 1e-6
+    b_v = abs(bx1 - bx2) < 1e-6
+
+    if a_h and b_h:
+        a0, a1 = sorted((ax1, ax2))
+        b0, b1 = sorted((bx1, bx2))
+        overlap = min(a1, b1) - max(a0, b0)
+        if overlap > 5:
+            return abs(ay1 - by1)
+    if a_v and b_v:
+        a0, a1 = sorted((ay1, ay2))
+        b0, b1 = sorted((by1, by2))
+        overlap = min(a1, b1) - max(a0, b0)
+        if overlap > 5:
+            return abs(ax1 - bx1)
+    return None
+
+
+def _path_parallel_proximity_penalty(path, other_paths, min_gap=2 * DOT_SIZE):
+    penalty = 0
+    my_segments = _segments(path)
+    for other_path in other_paths or []:
+        other_segments = _segments(other_path)
+        for seg in my_segments:
+            for other_seg in other_segments:
+                dist = _segments_parallel_distance(seg, other_seg)
+                if dist is not None and 0.5 < dist < min_gap:
+                    penalty += int((min_gap - dist) * 60)
+    return penalty
+
+
 def _path_respects_ports(path, exit_dir, entry_dir):
     segs = _segments(path)
     if not segs:
@@ -562,6 +719,7 @@ def _route_bounds(src, tgt, L):
 def _primary_waypoints(src, tgt, L, fi, exit_dir, entry_dir, dup_index=0, n_dots=0):
     sx, sy = _anchor_xy(src, exit_dir)
     tx, ty = _anchor_xy(tgt, entry_dir)
+    _, top, _, bottom = _route_bounds(src, tgt, L)
 
     slk = src["entity"]["lane_key"]
     tlk = tgt["entity"]["lane_key"]
@@ -589,7 +747,7 @@ def _primary_waypoints(src, tgt, L, fi, exit_dir, entry_dir, dup_index=0, n_dots
                 if is_h_exit:
                     return [_pt(tx, sy)]
                 return [_pt(sx, ty)]
-            my = (sy + ty) / 2 + off
+            my = min(bottom, max(sy, ty) + 48 + off)
             return [_pt(sx, my), _pt(tx, my)]
 
     if n_dots <= 3:
@@ -622,13 +780,14 @@ def _primary_waypoints(src, tgt, L, fi, exit_dir, entry_dir, dup_index=0, n_dots
     return [_pt(mx, sy), _pt(mx, ty)]
 
 
-def _candidate_waypoint_sets(src, tgt, L, fi, exit_dir, entry_dir, dup_index=0, n_dots=0):
+def _candidate_waypoint_sets(src, tgt, L, fi, exit_dir, entry_dir, flow_ctx, dup_index=0):
     sx, sy = _anchor_xy(src, exit_dir)
     tx, ty = _anchor_xy(tgt, entry_dir)
     off = dup_index * 20
     left, top, right, bottom = _route_bounds(src, tgt, L)
     is_h_exit = exit_dir in ("left", "right")
     is_h_entry = entry_dir in ("left", "right")
+    n_dots = flow_ctx.get("n_dots", 0)
 
     candidates = [_primary_waypoints(src, tgt, L, fi, exit_dir, entry_dir, dup_index, n_dots)]
 
@@ -670,6 +829,21 @@ def _candidate_waypoint_sets(src, tgt, L, fi, exit_dir, entry_dir, dup_index=0, 
         xx = max(left, min(right, x))
         candidates.append([_pt(xx, sy), _pt(xx, ty)])
 
+    if flow_ctx.get("prefer_return_to_ui"):
+        lower_y = min(bottom - 12, max(src["y"] + src["h"], tgt["y"] + tgt["h"]) + 35 + off)
+        candidates.append([_pt(sx, lower_y), _pt(tx, lower_y)])
+        candidates.append([_pt(sx, lower_y), _pt(tx, lower_y), _pt(tx, ty)])
+
+    if flow_ctx.get("prefer_reporting_sink"):
+        if entry_dir == "left":
+            runway_x = max(left + 24, min(right - 24, tgt["x"] - 35 - off))
+            candidates.append([_pt(runway_x, sy), _pt(runway_x, ty)])
+            candidates.append([_pt(runway_x, sy), _pt(runway_x, ty), _pt(tx, ty)])
+        elif entry_dir == "right":
+            runway_x = max(left + 24, min(right - 24, tgt["x"] + tgt["w"] + 35 + off))
+            candidates.append([_pt(runway_x, sy), _pt(runway_x, ty)])
+            candidates.append([_pt(runway_x, sy), _pt(runway_x, ty), _pt(tx, ty)])
+
     def _normalize(wpts):
         result = []
         for pt in wpts:
@@ -690,7 +864,7 @@ def _candidate_waypoint_sets(src, tgt, L, fi, exit_dir, entry_dir, dup_index=0, 
 
 # ───────────────────────── direction choice ───────────────────────────────────
 
-def _choose_direction(src, tgt, n_dots=0):
+def _choose_direction(src, tgt, flow_ctx):
     """Pick exit/entry direction pair.
 
     Principles (from user hand-edit analysis):
@@ -713,6 +887,7 @@ def _choose_direction(src, tgt, n_dots=0):
     tgt_type = tgt_entity.get("type", "")
     src_stage = src_entity.get("stage", "")
     tgt_stage = tgt_entity.get("stage", "")
+    n_dots = flow_ctx.get("n_dots", 0)
 
     # ── Cross-lane predefined strategies ─────────────────────────────────
     if slk != tlk:
@@ -723,7 +898,7 @@ def _choose_direction(src, tgt, n_dots=0):
         if slk == "third_party" and tlk == "internal_system":
             return "right", "right"
         if slk == "internal_system" and tlk == "third_party":
-            return "bottom", "top"
+            return "bottom", ("left" if dx >= 0 else "right")
         if abs(dx) >= abs(dy):
             return ("right" if dx > 0 else "left"), ("left" if dx > 0 else "right")
         return ("bottom" if dy > 0 else "top"), ("top" if dy > 0 else "bottom")
@@ -738,6 +913,14 @@ def _choose_direction(src, tgt, n_dots=0):
 
     h_gap = s_right < t_left - 5 or t_right < src["x"] - 5
     v_gap = s_bottom < t_top - 5 or t_bottom < src["y"] - 5
+
+    if flow_ctx.get("prefer_return_to_ui") and tgt_type == "ui_function":
+        return "bottom", "bottom"
+
+    if flow_ctx.get("prefer_reporting_sink") and h_gap:
+        if dx >= 0:
+            return "right", "left"
+        return "left", "right"
 
     # Later-stage systems returning to an earlier UI should prefer the
     # upper local corridor and re-enter the UI from the top.
@@ -838,8 +1021,28 @@ def build_edge_style(base_style, src, tgt, exit_dir, entry_dir,
 
 # ───────────────────────── routing ────────────────────────────────────────────
 
-def compute_route(src, tgt, L, fi, exit_dir, entry_dir,
-                  dup_index=0, n_dots=0, placed=None, used_paths=None):
+def _path_has_lower_corridor(path, src, tgt):
+    threshold = max(src["y"] + src["h"], tgt["y"] + tgt["h"]) + 12
+    for a, b in _segments(path):
+        if abs(a[1] - b[1]) < 1e-6 and a[1] >= threshold:
+            return True
+    return False
+
+
+def _path_has_readable_inner_runway(path, n_dots):
+    if n_dots <= 1:
+        return False
+    needed = DOT_SIZE + max(0, n_dots - 1) * DOT_CLUSTER_GAP + 2 * DOT_PATH_MARGIN
+    return _inner_longest_segment_len(path) >= needed
+
+
+def _lowest_horizontal_y(path):
+    ys = [a[1] for a, b in _segments(path) if abs(a[1] - b[1]) < 1e-6]
+    return max(ys) if ys else None
+
+
+def compute_route(src, tgt, L, fi, exit_dir, entry_dir, flow_ctx,
+                  dup_index=0, placed=None, used_paths=None, phase="initial"):
     """Return the best waypoint list among low-bend orthogonal candidates.
 
     Selection priorities:
@@ -852,15 +1055,23 @@ def compute_route(src, tgt, L, fi, exit_dir, entry_dir,
         src["entity"]["id"],
         tgt["entity"]["id"],
     }
+    n_dots = flow_ctx.get("n_dots", 0)
+    prefer_return_to_ui = flow_ctx.get("prefer_return_to_ui")
+    prefer_reporting_sink = flow_ctx.get("prefer_reporting_sink")
+    prefer_outer_share = (
+        src["entity"]["lane_key"] == "internal_system" and
+        tgt["entity"]["lane_key"] == "third_party"
+    )
 
     for idx, wpts in enumerate(_candidate_waypoint_sets(
-        src, tgt, L, fi, exit_dir, entry_dir, dup_index, n_dots
+        src, tgt, L, fi, exit_dir, entry_dir, flow_ctx, dup_index
     )):
         path = _full_path(src, tgt, wpts, exit_dir, entry_dir)
         if not _path_respects_ports(path, exit_dir, entry_dir):
             continue
         hits = _path_collision_count(path, placed, ignore_ids)
         overlaps = _path_overlap_count(path, used_paths)
+        proximity_penalty = _path_parallel_proximity_penalty(path, used_paths)
         bends = len(wpts)
         needed_seg = 0
         if n_dots > 0:
@@ -870,12 +1081,24 @@ def compute_route(src, tgt, L, fi, exit_dir, entry_dir,
         dup_penalty = 0
         if dup_index > 0 and bends < 2:
             dup_penalty = 3500
+        readability_bonus = 0
+        if prefer_reporting_sink and _path_has_readable_inner_runway(path, n_dots):
+            readability_bonus -= 2200 if phase == "polish" else 1200
+        if prefer_return_to_ui and _path_has_lower_corridor(path, src, tgt):
+            readability_bonus -= 1600 if phase == "polish" else 900
+        if prefer_outer_share and _path_has_lower_corridor(path, src, tgt):
+            readability_bonus -= 1400 if phase == "polish" else 800
+            low_y = _lowest_horizontal_y(path)
+            if low_y is not None:
+                readability_bonus -= int(low_y * 0.8)
         score = (
             hits * 100000 +
             overlaps * 5000 +
+            proximity_penalty +
             shortfall * DOT_TIGHT_ROUTE_WEIGHT +
             inner_shortfall * 35 +
             dup_penalty +
+            readability_bonus +
             bends * 1000 +
             round(_path_len(path)) +
             idx
@@ -892,24 +1115,14 @@ def _seg_len(a, b):
 
 
 def _full_path(src, tgt, wpts, exit_dir, entry_dir):
-    sx, sy = _anchor_xy(src, exit_dir)
-    tx, ty = _anchor_xy(tgt, entry_dir)
-    if wpts:
-        return [(sx, sy)] + list(wpts) + [(tx, ty)]
-
-    is_h_exit = exit_dir in ("left", "right")
-    is_h_entry = entry_dir in ("left", "right")
-    if abs(sx - tx) < 1e-6 or abs(sy - ty) < 1e-6:
-        return [(sx, sy), (tx, ty)]
-    if is_h_exit and is_h_entry:
-        mx = (sx + tx) / 2
-        return [(sx, sy), (mx, sy), (mx, ty), (tx, ty)]
-    if not is_h_exit and not is_h_entry:
-        my = (sy + ty) / 2
-        return [(sx, sy), (sx, my), (tx, my), (tx, ty)]
-    if is_h_exit:
-        return [(sx, sy), (tx, sy), (tx, ty)]
-    return [(sx, sy), (sx, ty), (tx, ty)]
+    return build_edge_path(
+        src,
+        tgt,
+        waypoints=wpts,
+        style="",
+        fallback_exit_dir=exit_dir,
+        fallback_entry_dir=entry_dir,
+    )
 
 
 def _walk(path, t):
@@ -1084,7 +1297,8 @@ def draw_background(b, data, L):
     title = (data.get("title_override") or
              f"{data.get('business_name','').strip()}"
              f"——{data.get('activity_name','').strip()}")
-    b.vertex(title, t1, L["title_x"], L["title_y"], L["title_w"], L["title_h"])
+    b.vertex(title, t1, L["title_x"], L["title_y"], L["title_w"], L["title_h"],
+             metadata={"codexKind": "title"})
 
     hdr = "rounded=0;whiteSpace=wrap;html=1;fillColor=#efefef;strokeColor=none;fontSize=12;"
     sub = "rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f7f7;strokeColor=none;fontSize=11;"
@@ -1094,17 +1308,21 @@ def draw_background(b, data, L):
 
     for s in STAGES:
         sb = L["stage_b"][s]
-        b.vertex(s, hdr, sb["x"], sb["y"], sb["w"], L["hdr_h"])
+        b.vertex(s, hdr, sb["x"], sb["y"], sb["w"], L["hdr_h"],
+                 metadata={"codexKind": "stage_header", "codexStage": s})
 
     sub_y = L["main_y"] + L["hdr_h"] + 8
     for sc, scb in L["sc_b"].items():
-        b.vertex(sc, sub, scb["x"], sub_y, scb["w"], L["sub_h"])
+        b.vertex(sc, sub, scb["x"], sub_y, scb["w"], L["sub_h"],
+                 metadata={"codexKind": "subcolumn_header", "codexSubcolumn": sc})
 
     for lk in LANES:
         lb = L["lane_b"][lk]
-        b.vertex("", bg, lb["x"], lb["y"], lb["w"], lb["h"])
+        b.vertex("", bg, lb["x"], lb["y"], lb["w"], lb["h"],
+                 metadata={"codexKind": "lane_background", "codexLaneKey": lk})
         b.vertex(LANE_LABELS[lk], lbl,
-                 L["ll_x"], lb["y"], L["ll_w"], lb["h"])
+                 L["ll_x"], lb["y"], L["ll_w"], lb["h"],
+                 metadata={"codexKind": "lane_label", "codexLaneKey": lk})
 
 
 def draw_entities(b, placed):
@@ -1112,12 +1330,27 @@ def draw_entities(b, placed):
         e = item["entity"]
         if e["type"] == "data_item_dot":
             continue
-        cid = b.vertex(e["name"], item["style"],
-                       item["x"], item["y"], item["w"], item["h"])
+        cid = b.vertex(
+            e["name"],
+            item["style"],
+            item["x"],
+            item["y"],
+            item["w"],
+            item["h"],
+            metadata={
+                "codexKind": "entity",
+                "codexEntityId": e["id"],
+                "codexEntityType": e.get("type", ""),
+                "codexLaneKey": e.get("lane_key", ""),
+                "codexStage": e.get("stage", ""),
+                "codexSubcolumn": e.get("subcolumn", ""),
+                "codexSemanticRole": e.get("semantic_role", ""),
+            },
+        )
         item["cell_id"] = cid
 
 
-def draw_flows(b, data, placed, L, color):
+def draw_flows(b, data, placed, L, color, polish_mode):
     edge_base = (
         "edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;"
         "jettySize=auto;html=1;endArrow=classic;endFill=1;"
@@ -1146,7 +1379,8 @@ def draw_flows(b, data, placed, L, color):
             continue
 
         dup_idx = dup_indices[fi]
-        exit_dir, entry_dir = _choose_direction(src, tgt, n_dots=len(flow.get("data_item_ids") or []))
+        flow_ctx = build_flow_context(flow, src, tgt)
+        exit_dir, entry_dir = _choose_direction(src, tgt, flow_ctx)
 
         exit_override = None
         entry_override = None
@@ -1161,23 +1395,89 @@ def draw_flows(b, data, placed, L, color):
                 exit_override = (min(0.9, base_ex + shift), base_ey, base_ep)
                 entry_override = (min(0.9, base_nx + shift), base_ny, base_np)
 
-        n_dots = len(flow.get("data_item_ids") or [])
-        wpts = compute_route(src, tgt, L, fi, exit_dir, entry_dir,
-                             dup_idx, n_dots, placed, used_paths)
+        n_dots = flow_ctx["n_dots"]
+        wpts = compute_route(
+            src,
+            tgt,
+            L,
+            fi,
+            exit_dir,
+            entry_dir,
+            flow_ctx,
+            dup_idx,
+            placed,
+            used_paths,
+            phase="initial",
+        )
         edge_style = build_edge_style(
             edge_base, src, tgt, exit_dir, entry_dir,
             exit_override, entry_override,
         )
-        b.edge(src["cell_id"], tgt["cell_id"], edge_style, points=wpts)
-
-        path    = _full_path(src, tgt, wpts, exit_dir, entry_dir)
+        path = build_edge_path(
+            src,
+            tgt,
+            waypoints=wpts,
+            style=edge_style,
+            fallback_exit_dir=exit_dir,
+            fallback_entry_dir=entry_dir,
+        )
         used_paths.append(path)
         dot_ids = [str(v) for v in (flow.get("data_item_ids") or [])]
         edge_records.append({
+            "flow": flow,
+            "flow_ctx": flow_ctx,
+            "src": src,
+            "tgt": tgt,
+            "exit_dir": exit_dir,
+            "entry_dir": entry_dir,
+            "edge_style": edge_style,
             "path": path,
+            "waypoints": wpts,
             "dot_ids": dot_ids,
             "dup_idx": dup_idx,
         })
+
+    if polish_mode == "layout_locked":
+        polished = []
+        for idx, rec in enumerate(edge_records):
+            flow_ctx = rec["flow_ctx"]
+            if not (flow_ctx.get("prefer_return_to_ui") or flow_ctx.get("prefer_reporting_sink")):
+                polished.append(rec)
+                continue
+            other_paths = [edge_records[j]["path"] for j in range(len(edge_records)) if j != idx]
+            wpts = compute_route(
+                rec["src"],
+                rec["tgt"],
+                L,
+                idx,
+                rec["exit_dir"],
+                rec["entry_dir"],
+                flow_ctx,
+                rec["dup_idx"],
+                placed,
+                other_paths,
+                phase="polish",
+            )
+            rec["waypoints"] = wpts
+            rec["path"] = build_edge_path(
+                rec["src"],
+                rec["tgt"],
+                waypoints=wpts,
+                style=rec["edge_style"],
+                fallback_exit_dir=rec["exit_dir"],
+                fallback_entry_dir=rec["entry_dir"],
+            )
+            polished.append(rec)
+        edge_records = polished
+
+    for rec in edge_records:
+        b.edge(
+            rec["src"]["cell_id"],
+            rec["tgt"]["cell_id"],
+            rec["edge_style"],
+            points=rec["waypoints"],
+            metadata=flow_metadata(rec["flow"], rec["src"], rec["tgt"], rec["flow_ctx"]),
+        )
 
     all_segments = []
     for idx, rec in enumerate(edge_records):
@@ -1198,7 +1498,20 @@ def draw_flows(b, data, placed, L, color):
         for did, (dx, dy, size) in zip(rec["dot_ids"], placements):
             dc = cmap.get(did, "#999999")
             ds = dot_s + f"fillColor={dc};strokeColor=none;fontColor=#ffffff;fontStyle=1;"
-            b.vertex(did, ds, dx, dy, size, size)
+            b.vertex(
+                did,
+                ds,
+                dx,
+                dy,
+                size,
+                size,
+                metadata={
+                    "codexKind": "data_dot",
+                    "codexDataItemId": did,
+                    "codexFlowId": rec["flow"].get("id", ""),
+                    "codexFlowRole": rec["flow_ctx"].get("flow_role", ""),
+                },
+            )
             occupied_rects.append((dx, dy, dx + size, dy + size))
 
 
@@ -1209,7 +1522,7 @@ def draw_legend(b, data, L, color):
     t2 = ("text;html=1;strokeColor=none;fillColor=none;"
           "align=left;verticalAlign=middle;fontSize=11;")
 
-    b.vertex("图形类型说明", t1, lx, ly, 180, 24)
+    b.vertex("图形类型说明", t1, lx, ly, 180, 24, metadata={"codexKind": "legend_header"})
     sy = ly + 32
     symbols = [
         ("数据主体（用户）",           USER_ACTOR_STYLE,                42, 84),
@@ -1220,11 +1533,11 @@ def draw_legend(b, data, L, color):
         ("第三方云服务",              TYPE_STYLES["third_party_cloud"],  90, 46),
     ]
     for label, sty, sw, sh in symbols:
-        b.vertex(label, sty, lx, sy, sw, sh)
+        b.vertex(label, sty, lx, sy, sw, sh, metadata={"codexKind": "legend_symbol"})
         sy += sh + 10
 
     sy += 8
-    b.vertex("数据项编号清单", t1, lx, sy, 180, 24)
+    b.vertex("数据项编号清单", t1, lx, sy, 180, 24, metadata={"codexKind": "legend_header"})
     sy += 30
     items = data.get("data_items") or []
     cmap  = build_color_map(items)
@@ -1234,35 +1547,39 @@ def draw_legend(b, data, L, color):
         dc  = cmap.get(sid, "#999999")
         b.vertex(sid,
                  ds + f"fillColor={dc};strokeColor=none;fontColor=#ffffff;fontStyle=1;",
-                 lx, sy, 20, 20)
+                 lx, sy, 20, 20,
+                 metadata={"codexKind": "legend_dot", "codexDataItemId": sid})
         nm   = item.get("name", "")
         desc = (item.get("description") or "").strip()
-        b.vertex(f"{nm}: {desc}" if desc else nm, t2, lx + 26, sy - 2, 295, 24)
+        b.vertex(f"{nm}: {desc}" if desc else nm, t2, lx + 26, sy - 2, 295, 24,
+                 metadata={"codexKind": "legend_text", "codexDataItemId": sid})
         sy += 28
 
     sy += 8
-    b.vertex("数据处理活动流向说明", t1, lx, sy, 200, 24)
+    b.vertex("数据处理活动流向说明", t1, lx, sy, 200, 24, metadata={"codexKind": "legend_header"})
     sy += 30
     es = (f"edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;"
           f"endArrow=classic;strokeColor={color};strokeWidth=1.5;")
-    a  = b.vertex("", "ellipse;fillColor=none;strokeColor=none;", lx,      sy, 1, 1)
-    bv = b.vertex("", "ellipse;fillColor=none;strokeColor=none;", lx + 65, sy, 1, 1)
-    b.edge(a, bv, es)
+    a  = b.vertex("", "ellipse;fillColor=none;strokeColor=none;", lx,      sy, 1, 1, metadata={"codexKind": "legend_anchor"})
+    bv = b.vertex("", "ellipse;fillColor=none;strokeColor=none;", lx + 65, sy, 1, 1, metadata={"codexKind": "legend_anchor"})
+    b.edge(a, bv, es, metadata={"codexKind": "legend_edge"})
     act = data.get("activity_name") or ""
-    b.vertex(f"{act}（单一数据处理活动）", t2, lx + 82, sy - 10, 250, 24)
+    b.vertex(f"{act}（单一数据处理活动）", t2, lx + 82, sy - 10, 250, 24,
+             metadata={"codexKind": "legend_text"})
 
 
 # ───────────────────────── entry point ────────────────────────────────────────
-def build_diagram(data):
+def build_diagram(data, polish_mode="auto"):
     b       = Builder()
     L       = build_layout(data)
     ents, _ = normalize_entities(data)
     placed  = place_entities(data, ents, L)
     color   = (data.get("activity_color") or "").strip() or DEFAULT_ACTIVITY_COLOR
+    polish_mode = resolve_polish_mode(data, polish_mode)
 
     draw_background(b, data, L)
     draw_entities(b, placed)
-    draw_flows(b, data, placed, L, color)
+    draw_flows(b, data, placed, L, color, polish_mode)
     draw_legend(b, data, L, color)
     return b.tostring()
 
@@ -1278,9 +1595,11 @@ def main():
     )
     p.add_argument("input",  help="Path to JSON (or YAML) input file.")
     p.add_argument("-o", "--output", help="Output .drawio file path.")
+    p.add_argument("--polish-mode", choices=["auto", "none", "layout_locked"], default="auto",
+                   help="Route polish mode. 'layout_locked' only rewrites ports/waypoints/dots.")
     args = p.parse_args()
     data = load_input(args.input)
-    xml  = build_diagram(data)
+    xml  = build_diagram(data, polish_mode=args.polish_mode)
     out  = args.output or os.path.splitext(args.input)[0] + ".drawio"
     write_output(xml, out)
     print(out)

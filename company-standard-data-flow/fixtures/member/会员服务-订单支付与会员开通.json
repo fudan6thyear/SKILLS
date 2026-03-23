@@ -1,0 +1,386 @@
+{
+  "business_name": "会员服务",
+  "activity_name": "订单支付与会员开通",
+  "title_override": "",
+  "activity_color": "#2F6F89",
+  "layout": {
+    "keep_empty_stages": true,
+    "use_store_use_subcolumns": true,
+    "store_use_subcolumns": [
+      "用户界面",
+      "业务系统"
+    ]
+  },
+  "lanes": {
+    "data_subject": {
+      "entities": [
+        {
+          "id": "subject_user",
+          "name": "用户",
+          "type": "human_actor",
+          "stage": "信息收集",
+          "note": "选择会员套餐并完成支付"
+        }
+      ]
+    },
+    "internal_staff": {
+      "entities": []
+    },
+    "internal_system": {
+      "entities": [
+        {
+          "id": "app_client",
+          "name": "App 客户端",
+          "type": "ui_function",
+          "stage": "信息收集",
+          "note": "展示套餐并发起会员订购",
+          "layout_hint": {
+            "x": 120,
+            "y": 525
+          }
+        },
+        {
+          "id": "order_center",
+          "name": "订单中心",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "创建订单并跟踪支付状态",
+          "layout_hint": {
+            "x": 620,
+            "y": 381
+          }
+        },
+        {
+          "id": "payment_gateway",
+          "name": "支付网关",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "对接第三方支付并接收支付结果",
+          "layout_hint": {
+            "x": 860,
+            "y": 505
+          }
+        },
+        {
+          "id": "member_center",
+          "name": "会员中心",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "根据支付结果开通会员并发放权益",
+          "layout_hint": {
+            "x": 620,
+            "y": 589
+          }
+        },
+        {
+          "id": "finance_recon",
+          "name": "财务对账系统",
+          "type": "internal_system",
+          "stage": "存储/使用",
+          "subcolumn": "业务系统",
+          "note": "接收订单与支付结果用于财务对账",
+          "layout_hint": {
+            "x": 860,
+            "y": 589
+          }
+        }
+      ]
+    },
+    "third_party": {
+      "entities": [
+        {
+          "id": "tonglian_pay",
+          "name": "通联支付云",
+          "type": "third_party_cloud",
+          "stage": "分享/传输",
+          "note": "处理支付请求并返回交易结果"
+        }
+      ]
+    }
+  },
+  "data_items": [
+    {
+      "id": 1,
+      "name": "用户ID",
+      "description": "会员订购用户的账号唯一标识",
+      "data_type_example": "UID123456",
+      "sensitive": false,
+      "owner": "平台账号体系",
+      "primary_targets": [
+        "app_client",
+        "order_center",
+        "member_center"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "手机号",
+      "description": "用于支付联系和订单关联的手机号",
+      "data_type_example": "13800138000",
+      "sensitive": true,
+      "owner": "用户",
+      "primary_targets": [
+        "app_client",
+        "order_center",
+        "tonglian_pay"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "套餐信息",
+      "description": "用户选择的会员套餐或订购方案",
+      "data_type_example": "月卡/季卡/年卡",
+      "sensitive": false,
+      "owner": "用户",
+      "primary_targets": [
+        "app_client",
+        "order_center"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "订单号",
+      "description": "订单中心生成的订单唯一编号",
+      "data_type_example": "ORD202603230001",
+      "sensitive": false,
+      "owner": "订单中心",
+      "primary_targets": [
+        "payment_gateway",
+        "tonglian_pay",
+        "member_center",
+        "finance_recon"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "支付金额",
+      "description": "会员订单对应的支付金额",
+      "data_type_example": "30.00",
+      "sensitive": true,
+      "owner": "订单中心",
+      "primary_targets": [
+        "payment_gateway",
+        "tonglian_pay",
+        "finance_recon"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "收款账户",
+      "description": "平台收款账户信息",
+      "data_type_example": "merchant_001",
+      "sensitive": false,
+      "owner": "平台财务",
+      "primary_targets": [
+        "payment_gateway"
+      ]
+    },
+    {
+      "id": 7,
+      "name": "支付渠道",
+      "description": "用户选择的支付方式或支付渠道",
+      "data_type_example": "微信支付/支付宝",
+      "sensitive": false,
+      "owner": "用户",
+      "primary_targets": [
+        "payment_gateway",
+        "tonglian_pay"
+      ]
+    },
+    {
+      "id": 8,
+      "name": "支付状态",
+      "description": "支付交易当前状态",
+      "data_type_example": "成功/失败/处理中",
+      "sensitive": true,
+      "owner": "通联支付云",
+      "primary_targets": [
+        "payment_gateway",
+        "order_center",
+        "member_center",
+        "finance_recon"
+      ]
+    },
+    {
+      "id": 9,
+      "name": "开通时间",
+      "description": "会员开通生效时间",
+      "data_type_example": "2026-03-23 20:00:00",
+      "sensitive": true,
+      "owner": "会员中心",
+      "primary_targets": [
+        "member_center"
+      ]
+    },
+    {
+      "id": 10,
+      "name": "交易流水号",
+      "description": "第三方支付平台返回的交易流水标识",
+      "data_type_example": "TL202603230001",
+      "sensitive": false,
+      "owner": "通联支付云",
+      "primary_targets": [
+        "payment_gateway",
+        "order_center",
+        "finance_recon"
+      ]
+    },
+    {
+      "id": 11,
+      "name": "退款状态",
+      "description": "交易是否已发起或完成退款",
+      "data_type_example": "未退款/退款中/已退款",
+      "sensitive": true,
+      "owner": "通联支付云",
+      "primary_targets": [
+        "payment_gateway",
+        "order_center",
+        "finance_recon"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow_user_to_app",
+      "stage": "信息收集",
+      "source_entity_id": "subject_user",
+      "target_entity_id": "app_client",
+      "data_item_ids": [
+        2,
+        3,
+        7
+      ],
+      "description": "用户在 App 客户端选择会员套餐并确认支付方式"
+    },
+    {
+      "id": "flow_app_to_order",
+      "stage": "信息收集",
+      "source_entity_id": "app_client",
+      "target_entity_id": "order_center",
+      "data_item_ids": [
+        1,
+        2,
+        3
+      ],
+      "description": "App 客户端向订单中心传输用户 ID、手机号和套餐信息以创建订单"
+    },
+    {
+      "id": "flow_order_to_gateway",
+      "stage": "存储/使用",
+      "source_entity_id": "order_center",
+      "target_entity_id": "payment_gateway",
+      "data_item_ids": [
+        4,
+        5,
+        6,
+        7
+      ],
+      "description": "订单中心向支付网关传输订单号、支付金额、收款账户和支付渠道"
+    },
+    {
+      "id": "flow_gateway_to_tonglian",
+      "stage": "分享/传输",
+      "source_entity_id": "payment_gateway",
+      "target_entity_id": "tonglian_pay",
+      "data_item_ids": [
+        2,
+        4,
+        5,
+        7
+      ],
+      "description": "支付网关向通联支付云发送订单号、金额、支付渠道和手机号"
+    },
+    {
+      "id": "flow_tonglian_to_gateway",
+      "stage": "分享/传输",
+      "source_entity_id": "tonglian_pay",
+      "target_entity_id": "payment_gateway",
+      "data_item_ids": [
+        8,
+        10,
+        11
+      ],
+      "description": "通联支付云返回支付状态、交易流水号和退款状态"
+    },
+    {
+      "id": "flow_gateway_to_order",
+      "stage": "存储/使用",
+      "source_entity_id": "payment_gateway",
+      "target_entity_id": "order_center",
+      "data_item_ids": [
+        8,
+        10,
+        11
+      ],
+      "description": "支付网关将支付结果同步回订单中心"
+    },
+    {
+      "id": "flow_order_to_member",
+      "stage": "存储/使用",
+      "source_entity_id": "order_center",
+      "target_entity_id": "member_center",
+      "data_item_ids": [
+        1,
+        4,
+        8,
+        9
+      ],
+      "description": "订单中心向会员中心同步用户 ID、订单号、支付状态和开通时间用于会员开通"
+    },
+    {
+      "id": "flow_order_to_finance",
+      "stage": "存储/使用",
+      "source_entity_id": "order_center",
+      "target_entity_id": "finance_recon",
+      "data_item_ids": [
+        4,
+        5,
+        8,
+        10,
+        11
+      ],
+      "description": "订单中心向财务对账系统同步订单与支付结果用于对账"
+    }
+  ],
+  "legend": {
+    "notes": [
+      "所有流向线使用统一颜色，代表同一数据处理活动",
+      "数据项差异通过流向线上的彩色圆点（编号）区分"
+    ]
+  },
+  "lifecycle_flags": {
+    "has_share_transfer": true,
+    "has_archive_delete": false
+  },
+  "archive_delete": {
+    "retention_entities": [],
+    "delete_entities": [],
+    "flows": []
+  },
+  "generation_constraints": {
+    "title_format": "{business_name}——{activity_name}",
+    "required_stages": [
+      "信息收集",
+      "存储/使用",
+      "分享/传输",
+      "归档/删除"
+    ],
+    "required_lanes": [
+      "数据主体",
+      "内部人员",
+      "内部系统",
+      "第三方"
+    ],
+    "required_legend_sections": [
+      "图形类型说明",
+      "数据项编号清单",
+      "数据处理活动流向说明"
+    ],
+    "enforce_unique_data_item_ids": true,
+    "enforce_single_entity_instance_preferred": true
+  },
+  "prompt_hint": "请根据本 JSON 生成公司标准 Data Flow 图，输出为 draw.io 原生 .drawio 文件。必须保留四个一级阶段和四个固定泳道。图右侧必须包含图形图例、数据项编号清单和数据处理活动流向说明。所有主数据流使用统一 activity_color，同一编号的数据项可在多条路径中重复出现，但编号释义必须唯一。"
+}
