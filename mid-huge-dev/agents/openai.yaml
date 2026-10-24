@@ -1,0 +1,7 @@
+interface:
+  display_name: "Mid-Huge Dev"
+  short_description: "Task-driven dev workflow for mid-to-large projects"
+  brand_color: "#6D5AE6"
+  default_prompt: "Use $mid-huge-dev to scaffold or advance a task-driven project — run init, plan, dispatch, status, or close against docs/pm/."
+policy:
+  allow_implicit_invocation: false
